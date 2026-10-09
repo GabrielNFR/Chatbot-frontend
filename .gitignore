@@ -1,0 +1,28 @@
+# Dependencias (cobre variantes como node_modules.npm.bak)
+node_modules/
+node_modules.*
+
+# Build e cache
+dist/
+*.tsbuildinfo
+
+# Lockfile de gerenciador nao usado (o projeto e pnpm)
+package-lock.json
+
+# Variaveis de ambiente
+.env
+.env.local
+.env.*.local
+
+# Sistema operacional / editor
+.DS_Store
+Thumbs.db
+
+# Arquivos internos do sandbox do v0
+__v0_runtime_loader.js
+__v0_devtools.tsx
+__v0_jsx-dev-runtime.ts
+.snowflake/
+.design-cache/
+.v0-trash/
+.vercel/
