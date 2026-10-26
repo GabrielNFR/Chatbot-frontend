@@ -7,10 +7,14 @@ import {
   usuarioMock,
 } from '@/mocks/data'
 
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
+/**
+ * Vazio = mesma origem (`/api`). Em dev o proxy do Vite encaminha para o backend
+ * (vite.config.ts); em produção o Nginx faz o mesmo.
+ */
+const API_URL = import.meta.env.VITE_API_URL ?? ''
 
-/** Ponto único de troca: virar para `false` quando a API estiver pronta. */
-const USAR_MOCK = true
+/** `VITE_USAR_MOCK=false` desliga os mocks e passa a chamar a API real. */
+const USAR_MOCK = import.meta.env.VITE_USAR_MOCK !== 'false'
 
 const atraso = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 

@@ -13,7 +13,7 @@ import {
   registrarSolicitacao,
   resumo,
   usuario,
-} from '@/api/messages'
+} from '@/services/messages'
 import type { ChatMessage, Protocolo } from '@/lib/types'
 
 type EstadoConversa = 'carregando' | 'pronto' | 'erro'

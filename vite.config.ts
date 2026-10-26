@@ -7,6 +7,10 @@ export default defineConfig({
   server: {
     port: 3000,
     strictPort: false,
+    // Mesma origem em dev: /api -> Spring Boot, sem CORS.
+    proxy: {
+      '/api': 'http://localhost:8080',
+    },
   },
   resolve: {
     alias: {

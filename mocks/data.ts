@@ -5,7 +5,7 @@ import type { ChatMessage, Protocolo, ResumoSolicitacao, Usuario } from '@/lib/t
  *
  * Este é o único lugar do projeto que inventa dados de negócio. Quando o backend
  * expuser os endpoints reais (contexto-front.md, seção 4.5), basta apagar este
- * arquivo e desligar `USAR_MOCK` em src/api/messages.ts — os componentes não mudam.
+ * arquivo e desligar `USAR_MOCK` em services/messages.ts — os componentes não mudam.
  */
 
 export const usuarioMock: Usuario = {

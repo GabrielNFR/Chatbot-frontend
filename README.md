@@ -63,7 +63,7 @@ Abre em <http://localhost:3000>.
 ├── Home.tsx            # tela da US 06 (chat + resumo da solicitação)
 ├── globals.css         # Tailwind + tokens de tema do shadcn/ui
 ├── vite.config.ts      # alias "@" -> raiz do projeto; dev na porta 3000
-├── api/messages.ts     # camada de dados: único ponto de contato com a API
+├── services/messages.ts # camada de dados: único ponto de contato com a API
 ├── mocks/data.ts       # dados mockados (o único lugar que inventa dados)
 ├── lib/types.ts        # tipos: contrato de /api/messages + suposições
 ├── lib/utils.ts        # helper `cn` (clsx + tailwind-merge)
@@ -73,16 +73,16 @@ Abre em <http://localhost:3000>.
 
 ## Dados e integração com a API
 
-**Hoje a tela não fala com o backend.** Todo acesso a dados passa por `api/messages.ts` e,
+**Hoje a tela não fala com o backend.** Todo acesso a dados passa por `services/messages.ts` e,
 enquanto `USAR_MOCK` for `true`, devolve o conteúdo de `mocks/data.ts`:
 
 ```ts
-// api/messages.ts
+// services/messages.ts
 const USAR_MOCK = true
 ```
 
 Trocar para `false` ativa as chamadas HTTP reais. Nenhum componente precisa mudar — o `Home.tsx`
-importa apenas de `@/api/messages`, nunca dos mocks diretamente.
+importa apenas de `@/services/messages`, nunca dos mocks diretamente.
 
 ### Endpoints
 
@@ -154,25 +154,31 @@ fingir sucesso.
 
 ### URL da API
 
-Lida de `VITE_API_URL`, com padrão `http://localhost:8080`. Para apontar para outro ambiente,
-copie `.env.example` para `.env.local` e ajuste:
+As chamadas usam **caminho relativo** (`/api/...`). O padrão de `VITE_API_URL` é vazio = mesma
+origem.
+
+| Ambiente | Como `/api` chega no backend |
+|---|---|
+| `pnpm dev` | Proxy do Vite (`vite.config.ts`) → `http://localhost:8080` |
+| `pnpm preview` | Sem proxy: defina `VITE_API_URL=http://localhost:8080` no build para testar local |
+| Produção (EC2) | Nginx na mesma origem, com `/api` → Spring Boot |
+
+Se precisar de outra origem, copie `.env.example` para `.env.local` e defina `VITE_API_URL`.
+Atenção: essa variável é resolvida em **build time** — com URL absoluta, trocar de ambiente exige
+rebuild.
+
+### Mock vs. API real
 
 ```
-VITE_API_URL=http://localhost:8080
+VITE_USAR_MOCK=true    # padrão: mocks ligados
+VITE_USAR_MOCK=false   # chama a API real
 ```
 
 ### CORS
 
-| Origem | Onde roda |
-|---|---|
-| `http://localhost:3000` | `pnpm dev` |
-| `http://localhost:4173` | `pnpm preview` |
-
-As duas origens são permitidas pelo backend, então `USAR_MOCK = false` funciona em `pnpm dev` sem
-ajuste extra.
-
-Se você mudar a porta (`server.port` em `vite.config.ts`), a nova origem precisa ser liberada
-também do lado do backend.
+Com o proxy do Vite (dev) e com Nginx/ALB na frente (produção), a requisição sai como **mesma
+origem** — CORS não é necessário. Ele só entra em jogo se você usar `VITE_API_URL` absoluto para
+outro host; nesse caso a origem exata (`esquema://host:porta`) precisa estar liberada no backend.
 
 ## O que já está implementado
 
