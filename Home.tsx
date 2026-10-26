@@ -11,12 +11,27 @@ import { listarConversas } from '@/services/conversas'
 import { ErroHttp } from '@/services/http'
 import { enviarMensagem, listarMensagens } from '@/services/mensagens'
 import { criarSolicitacao } from '@/services/solicitacoes'
-import type { Mensagem, SolicitacaoRegistrada } from '@/lib/types'
+import type { Conversa, Mensagem, SolicitacaoRegistrada, StatusConversa } from '@/lib/types'
 
 type EstadoConversa = 'carregando' | 'pronto' | 'erro'
 type EstadoRegistro = 'ocioso' | 'enviando' | 'sucesso' | 'erro'
 
+const ROTULO_STATUS: Record<StatusConversa, string> = {
+  ATIVA: 'Ativa',
+  AGUARDANDO_ATENDIMENTO_HUMANO: 'Aguard. humano',
+  EM_ATENDIMENTO_HUMANO: 'Em atendimento',
+  ENCERRADA: 'Encerrada',
+}
+
+const CLASSE_STATUS: Record<StatusConversa, string> = {
+  ATIVA: 'bg-[#e9f6f0] text-[#2c876a]',
+  AGUARDANDO_ATENDIMENTO_HUMANO: 'bg-[#fff7e6] text-[#8a5a00]',
+  EM_ATENDIMENTO_HUMANO: 'bg-[#eef1ff] text-[#3c4c9b]',
+  ENCERRADA: 'bg-[#f0f2f6] text-[#68738a]',
+}
+
 export default function Home() {
+  const [conversas, setConversas] = useState<Conversa[]>([])
   const [conversaId, setConversaId] = useState<number | null>(null)
   const [mensagens, setMensagens] = useState<Mensagem[]>([])
   const [estado, setEstado] = useState<EstadoConversa>('carregando')
@@ -31,6 +46,7 @@ export default function Home() {
     setEstado('carregando')
     try {
       const pagina = await listarConversas()
+      setConversas(pagina.conteudo)
       const conversa = pagina.conteudo[0]
       if (!conversa) {
         setConversaId(null)
@@ -48,6 +64,19 @@ export default function Home() {
   useEffect(() => {
     void carregar()
   }, [carregar])
+
+  async function selecionarConversa(id: number) {
+    setConversaId(id)
+    setEstado('carregando')
+    setErroEnvio(false)
+    setConversaEncerrada(false)
+    try {
+      setMensagens(await listarMensagens(id))
+      setEstado('pronto')
+    } catch {
+      setEstado('erro')
+    }
+  }
 
   async function handleEnviar() {
     const texto = message.trim()
@@ -106,6 +135,25 @@ export default function Home() {
             <a className="flex items-center gap-3 rounded-lg bg-[#e9edff] px-3 py-2.5 text-sm font-semibold text-[#253a83]" href="#"><FileText className="size-4" /> Novo chamado</a>
             <a className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[#69758b] hover:bg-white" href="#"><Clock3 className="size-4" /> Minhas solicitações</a>
           </nav>
+
+          <div className="mt-6">
+            <p className="mb-2 px-3 text-[11px] font-bold uppercase tracking-[0.16em] text-[#8993a8]">Conversas</p>
+            <ul className="flex flex-col gap-1">
+              {conversas.length === 0 && <li className="px-3 text-xs text-[#8993a8]">Nenhuma conversa.</li>}
+              {conversas.map((conversa) => (
+                <li key={conversa.id}>
+                  <button
+                    onClick={() => void selecionarConversa(conversa.id)}
+                    aria-current={conversa.id === conversaId}
+                    className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${conversa.id === conversaId ? 'bg-[#e9edff] font-semibold text-[#253a83]' : 'text-[#69758b] hover:bg-white'}`}
+                  >
+                    <span className="truncate">{conversa.cliente}</span>
+                    <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${CLASSE_STATUS[conversa.status]}`}>{ROTULO_STATUS[conversa.status]}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
           <div className="mt-10 hidden rounded-xl border border-[#e2e6ed] bg-white p-4 lg:block">
             <div className="mb-3 flex size-8 items-center justify-center rounded-lg bg-[#eef1ff] text-[#253a83]"><ShieldCheck className="size-4" /></div>
             <p className="text-xs font-semibold text-[#34405b]">Seus dados estão seguros</p>
