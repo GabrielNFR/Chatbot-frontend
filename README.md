@@ -4,9 +4,9 @@ Frontend do assistente conversacional de atendimento. Esta é a tela da **US 06 
 Registro Assistido de Solicitações**: a usuária conversa com a assistente (Lia), que coleta os
 dados da solicitação e devolve um protocolo.
 
-O backend (Spring Boot) vive em repositório separado e hoje expõe apenas o **CRUD básico de
-mensagens** (`/api/messages`) — não há nenhuma rota para sessões, solicitações/protocolo ou
-transbordo. Detalhes em [Endpoints](#endpoints).
+O backend (Spring Boot) vive em repositório separado e hoje expõe **uma única rota**:
+`GET /api/conversas`. Não existe `/api/messages`, nem `POST`, nem `sessionId` — o modelo é
+`Conversa -> Mensagem`. Detalhes em [Endpoints](#endpoints).
 
 As personas, as user stories e as convenções de UI estão documentadas em
 [`contexto-front.md`](./contexto-front.md) — documento de referência. Onde ele divergir do código
@@ -58,65 +58,88 @@ Abre em <http://localhost:3000>.
 
 ```
 .
-├── index.html          # entry point do Vite
-├── main.tsx            # bootstrap do React
-├── Home.tsx            # tela da US 06 (chat + resumo da solicitação)
-├── globals.css         # Tailwind + tokens de tema do shadcn/ui
-├── vite.config.ts      # alias "@" -> raiz do projeto; dev na porta 3000
-├── services/messages.ts # camada de dados: único ponto de contato com a API
-├── mocks/data.ts       # dados mockados (o único lugar que inventa dados)
-├── lib/types.ts        # tipos: contrato de /api/messages + suposições
-├── lib/utils.ts        # helper `cn` (clsx + tailwind-merge)
-├── components/ui/      # componentes shadcn/ui
-└── public/             # ícones e placeholders
+├── index.html            # entry point do Vite
+├── main.tsx              # bootstrap do React
+├── Home.tsx              # tela da US 06 (chat + resumo da solicitação)
+├── globals.css           # Tailwind + tokens de tema do shadcn/ui
+├── vite.config.ts        # alias "@" -> raiz; dev na 3000; proxy /api -> :8080
+├── services/             # única camada que conhece a API
+│   ├── http.ts           # baseURL, fetch e erro (nenhum fetch fora daqui)
+│   ├── conversas.ts      # listarConversas, criarConversa
+│   ├── mensagens.ts      # listarMensagens, enviarMensagem
+│   ├── solicitacoes.ts   # criarSolicitacao (reservado, ainda mock)
+│   └── app.ts            # usuário/resumo/opções (ainda sem endpoint)
+├── mocks/data.ts         # dados mockados, com os mesmos tipos da API
+├── lib/types.ts          # Conversa, Mensagem, Pagina<T>, ...
+├── lib/utils.ts          # helper `cn` (clsx + tailwind-merge)
+├── components/ui/        # componentes shadcn/ui
+└── public/               # ícones e placeholders
 ```
 
 ## Dados e integração com a API
 
-**Hoje a tela não fala com o backend.** Todo acesso a dados passa por `services/messages.ts` e,
-enquanto `USAR_MOCK` for `true`, devolve o conteúdo de `mocks/data.ts`:
+**Hoje a tela não fala com o backend.** Todo acesso a dados passa por `services/` e, enquanto
+`USAR_MOCK` for verdadeiro, devolve o conteúdo de `mocks/data.ts`:
 
 ```ts
-// services/messages.ts
-const USAR_MOCK = true
+// services/http.ts
+export const USAR_MOCK = import.meta.env.VITE_USAR_MOCK !== 'false'
 ```
 
-Trocar para `false` ativa as chamadas HTTP reais. Nenhum componente precisa mudar — o `Home.tsx`
-importa apenas de `@/services/messages`, nunca dos mocks diretamente.
+Com `VITE_USAR_MOCK=false` as chamadas HTTP reais são usadas. Nenhum componente muda — as telas
+importam apenas de `@/services/*`, nunca dos mocks. Regra prática: **se aparecer `fetch(` em um
+`.tsx`, a arquitetura falhou.**
 
 ### Endpoints
 
-Verificado no código-fonte do backend: existe **um único controller**, `ChatMessageController`,
-mapeado em `/api/messages`.
-
-| Método | Rota | Retorno | Descrição |
-|---|---|---|---|
-| `GET` | `/api/messages` | `200` | Lista todas as mensagens, ordenadas por `timestamp` crescente |
-| `POST` | `/api/messages` | `201` | Cria uma mensagem |
-| `DELETE` | `/api/messages/{id}` | `204` / `404` | Remove por id; `404` se não existir |
-
-**Contrato do `POST`** — envie apenas `sender` e `content`. O `timestamp` é gerado pelo backend
-(`@PrePersist`), então não envie.
-
-```json
-{ "sender": "USER", "content": "Ola, preciso de ajuda" }
-```
-
-`sender` é `String` livre no backend, **sem enum**. A convenção combinada é `USER` / `ASSISTANT` /
-`SYSTEM` — é o que o tipo `Sender` em `lib/types.ts` declara.
-
-Resposta (`201`):
+**Hoje o backend tem uma única rota:** `GET /api/conversas` (paginada).
 
 ```json
 {
-  "id": 1,
-  "sender": "USER",
-  "content": "Ola, preciso de ajuda",
-  "timestamp": "2026-10-09T01:54:36.231825"
+  "conteudo": [
+    { "id": 1, "cliente": "Mariana Souza", "canal": "WEB", "status": "ATIVA",
+      "iniciadaEm": "2026-10-23T14:02:11", "ultimaInteracaoEm": "2026-10-23T14:09:40" }
+  ],
+  "pagina": 0, "tamanho": 20, "totalElementos": 1, "totalPaginas": 1
 }
 ```
 
-O `timestamp` é `LocalDateTime` **sem timezone**: trate como horário do servidor, não assuma UTC.
+#### Contrato-alvo (o front já está escrito contra ele)
+
+| Rota | Corpo | Retorno | Status |
+|---|---|---|---|
+| `GET /api/conversas` | — | `Pagina<Conversa>` | ✅ existe |
+| `GET /api/conversas/{id}/mensagens` | — | `Mensagem[]` crescente | ⏳ a implementar |
+| `POST /api/conversas/{id}/mensagens` | `{ "conteudo": "..." }` | `201` + `Mensagem` | ⏳ a implementar |
+| `POST /api/conversas` | `{ "clienteId": 1, "canal": "WEB" }` | `201` + `Conversa` | ⏳ a implementar |
+
+O `POST` de mensagem **não recebe remetente**: o backend grava como `CLIENTE`, e quem grava
+`CHATBOT` é a lógica do assistente. Isso impede a tela de forjar o remetente.
+
+Para a US 06, `POST /api/requests` continua reservado — o tipo `SolicitacaoRegistrada` e o serviço
+`criarSolicitacao()` já existem, apontando para o mock.
+
+#### Valores de enum
+
+```
+remetente: CLIENTE | CHATBOT | ATENDENTE | SISTEMA
+status:    ATIVA | AGUARDANDO_ATENDIMENTO_HUMANO | EM_ATENDIMENTO_HUMANO | ENCERRADA
+```
+
+#### Mapeamento de campos
+
+Tudo em pt-BR, traduzido **uma vez** em `services/` — nenhum componente conhece estes nomes:
+
+| Backend | Front |
+|---|---|
+| `remetente` | `Mensagem.remetente` |
+| `conteudo` | `Mensagem.conteudo` |
+| `enviadaEm` | `Mensagem.enviadaEm` |
+| `conteudo` (paginação) | `Pagina.conteudo` — atenção: é `conteudo`, não `content` |
+
+`enviadaEm` é `LocalDateTime` **sem offset**: `new Date("2026-10-23T14:02:11")` interpreta como
+hora local — correto se servidor e cliente estiverem no mesmo fuso. Não acrescente `Z`; alinhe o
+servidor com `TZ=America/Sao_Paulo`.
 
 #### Rotas de infraestrutura
 
@@ -129,28 +152,8 @@ O `timestamp` é `LocalDateTime` **sem timezone**: trate como horário do servid
 `/actuator/info` só aparece com o perfil `prod` ativo (que expõe `health,info`). No perfil padrão,
 só `health` é exposto.
 
-#### O que o backend ainda não tem
-
-| User Story | Endpoint esperado | Status |
-|---|---|---|
-| US 01 / 03 — Sessão e memória | `POST /api/sessions`, `GET /api/sessions/{id}/messages` | ❌ |
-| US 02 — Base de diretrizes (RAG) | — | ❌ |
-| US 05 — Consulta de status | — | ❌ |
-| **US 06 — Registro de solicitação** | `POST /api/requests` → protocolo | ❌ |
-| US 07 / 08 — Transbordo | `POST /api/sessions/{id}/transfer` | ❌ |
-| US 10 — Métricas | `GET /api/metrics/retention` | ❌ |
-| Chat com LLM | `POST /api/sessions/{id}/chat` | ❌ |
-
-Ou seja: dá para ligar o histórico e o envio de mensagens de verdade. Todo o resto — incluindo o
-protocolo da US 06, que é o objetivo desta tela — continua dependendo de mock.
-
-> ⚠️ **Armadilha ao ligar a API real:** `GET /api/messages` devolve **todas** as mensagens do
-> banco, sem filtro — não existe `sessionId` no backend, logo não há isolamento por conversa. Com
-> `USAR_MOCK = false`, a tela mostraria o histórico global de todo mundo. Antes de ligar em
-> qualquer ambiente compartilhado, é preciso que o backend suporte sessão.
-
-`registrarSolicitacao()` **lança erro de propósito** quando `USAR_MOCK` é `false`, em vez de
-fingir sucesso.
+`criarSolicitacao()` **lança erro de propósito** quando `USAR_MOCK` é `false`, em vez de fingir
+sucesso — o `POST /api/requests` não existe no backend.
 
 ### URL da API
 
@@ -169,10 +172,26 @@ rebuild.
 
 ### Mock vs. API real
 
+`VITE_USAR_MOCK` é **build time**: o valor é congelado no bundle durante `pnpm build`. Definir a
+variável no servidor da EC2 depois do build **não tem efeito** — para trocar, rebuilde.
+
+| Onde | Arquivo / forma | Efeito |
+|---|---|---|
+| Sua máquina | `.env.local` (gitignored) | só o `pnpm dev` local |
+| Build de produção | `.env.production` (versionado) | todo `pnpm build` |
+| Pontual / CI | variável de ambiente no comando | tem prioridade sobre os arquivos |
+
+O `.env.production` já vem com `VITE_USAR_MOCK=false` e `VITE_API_URL` vazio (mesma origem). Para
+gerar um build mockado de propósito, sobrescreva:
+
+```bash
+VITE_USAR_MOCK=true pnpm build              # bash
+$env:VITE_USAR_MOCK="true"; pnpm build      # PowerShell
 ```
-VITE_USAR_MOCK=true    # padrão: mocks ligados
-VITE_USAR_MOCK=false   # chama a API real
-```
+
+Precedência do Vite: `.env` → `.env.local` → `.env.[mode]` → `.env.[mode].local`; variáveis de
+ambiente do processo vencem todos. Depois de editar um `.env*`, **reinicie o `pnpm dev`** — o Vite
+só lê env na inicialização.
 
 ### CORS
 

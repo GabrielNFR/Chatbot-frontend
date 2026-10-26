@@ -6,32 +6,39 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
-import {
-  enviarMensagem,
-  listarMensagens,
-  opcoesSistema,
-  registrarSolicitacao,
-  resumo,
-  usuario,
-} from '@/services/messages'
-import type { ChatMessage, Protocolo } from '@/lib/types'
+import { opcoesSistema, resumo, usuario } from '@/services/app'
+import { listarConversas } from '@/services/conversas'
+import { ErroHttp } from '@/services/http'
+import { enviarMensagem, listarMensagens } from '@/services/mensagens'
+import { criarSolicitacao } from '@/services/solicitacoes'
+import type { Mensagem, SolicitacaoRegistrada } from '@/lib/types'
 
 type EstadoConversa = 'carregando' | 'pronto' | 'erro'
 type EstadoRegistro = 'ocioso' | 'enviando' | 'sucesso' | 'erro'
 
 export default function Home() {
-  const [mensagens, setMensagens] = useState<ChatMessage[]>([])
+  const [conversaId, setConversaId] = useState<number | null>(null)
+  const [mensagens, setMensagens] = useState<Mensagem[]>([])
   const [estado, setEstado] = useState<EstadoConversa>('carregando')
   const [message, setMessage] = useState('')
   const [enviandoMensagem, setEnviandoMensagem] = useState(false)
   const [erroEnvio, setErroEnvio] = useState(false)
+  const [conversaEncerrada, setConversaEncerrada] = useState(false)
   const [registro, setRegistro] = useState<EstadoRegistro>('ocioso')
-  const [protocolo, setProtocolo] = useState<Protocolo | null>(null)
+  const [solicitacao, setSolicitacao] = useState<SolicitacaoRegistrada | null>(null)
 
   const carregar = useCallback(async () => {
     setEstado('carregando')
     try {
-      setMensagens(await listarMensagens())
+      const pagina = await listarConversas()
+      const conversa = pagina.conteudo[0]
+      if (!conversa) {
+        setConversaId(null)
+        setMensagens([])
+      } else {
+        setConversaId(conversa.id)
+        setMensagens(await listarMensagens(conversa.id))
+      }
       setEstado('pronto')
     } catch {
       setEstado('erro')
@@ -44,15 +51,19 @@ export default function Home() {
 
   async function handleEnviar() {
     const texto = message.trim()
-    if (!texto || enviandoMensagem) return
+    if (!texto || enviandoMensagem || conversaId === null) return
     setEnviandoMensagem(true)
     setErroEnvio(false)
     try {
-      const nova = await enviarMensagem(texto)
+      const nova = await enviarMensagem(conversaId, texto)
       setMensagens((atual) => [...atual, nova])
       setMessage('')
-    } catch {
-      setErroEnvio(true)
+    } catch (erro) {
+      if (erro instanceof ErroHttp && erro.status === 409) {
+        setConversaEncerrada(true)
+      } else {
+        setErroEnvio(true)
+      }
     } finally {
       setEnviandoMensagem(false)
     }
@@ -61,7 +72,7 @@ export default function Home() {
   async function handleRegistrar() {
     setRegistro('enviando')
     try {
-      setProtocolo(await registrarSolicitacao())
+      setSolicitacao(await criarSolicitacao())
       setRegistro('sucesso')
     } catch {
       setRegistro('erro')
@@ -71,7 +82,7 @@ export default function Home() {
   const iniciais = usuario.nome.split(' ').filter(Boolean).map((parte) => parte[0]).slice(0, 2).join('').toUpperCase()
   const transcript =
     estado === 'pronto'
-      ? mensagens.map((item) => ({ role: item.sender === 'USER' ? 'user' : 'assistant', text: item.content }))
+      ? mensagens.map((item) => ({ role: item.remetente === 'CLIENTE' ? 'user' : 'assistant', text: item.conteudo }))
       : []
 
   return (
@@ -113,14 +124,15 @@ export default function Home() {
               <div className="flex min-h-[420px] flex-col gap-5 px-5 py-6 sm:px-7" aria-live="polite">
                 {estado === 'carregando' && <div className="flex flex-col gap-4"><Skeleton className="h-16 w-3/4 rounded-2xl" /><Skeleton className="ml-auto h-12 w-1/2 rounded-2xl" /><Skeleton className="h-16 w-2/3 rounded-2xl" /></div>}
                 {estado === 'erro' && <div className="flex gap-3"><div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-[#fdecec] text-[#b42318]"><TriangleAlert className="size-4" /></div><div className="max-w-[75%] rounded-2xl rounded-tl-sm bg-[#fef3f2] px-4 py-3 text-sm leading-6 text-[#912018]"><p className="font-semibold">Não foi possível carregar a conversa.</p><p>Verifique sua conexão e tente novamente.</p><Button variant="outline" size="sm" className="mt-3 border-[#f2c6c2] bg-white text-[#912018]" onClick={() => void carregar()}>Tentar novamente</Button></div></div>}
-                {estado === 'pronto' && mensagens.length === 0 && <p className="text-center text-sm text-[#8993a8]">Nenhuma mensagem ainda. Envie a primeira para começar.</p>}
+                {estado === 'pronto' && mensagens.length === 0 && <p className="text-center text-sm text-[#8993a8]">{conversaId === null ? 'Nenhuma conversa encontrada.' : 'Nenhuma mensagem ainda. Envie a primeira para começar.'}</p>}
                 {transcript.map((item, index) => <div key={index} className={`flex gap-3 ${item.role === 'user' ? 'flex-row-reverse' : ''}`}><div className={`mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full ${item.role === 'user' ? 'bg-[#f0f2f6] text-[#68738a]' : 'bg-[#e9edff] text-[#314692]'}`}>{item.role === 'user' ? <UserRound className="size-3.5" /> : <Bot className="size-4" />}</div><div className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-6 ${item.role === 'user' ? 'rounded-tr-sm bg-[#253a83] text-white' : 'rounded-tl-sm bg-[#f3f5f8] text-[#3e4a62]'}`}>{item.text.split('\n').map((line, i) => <span key={i}>{line}{i < item.text.split('\n').length - 1 && <br />}</span>)}</div></div>)}
                 {estado === 'pronto' && <div className="flex gap-3"><div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-[#e9edff] text-[#314692]"><Bot className="size-4" /></div><div className="max-w-[75%] rounded-2xl rounded-tl-sm bg-[#f3f5f8] px-4 py-3 text-sm text-[#3e4a62]"><p className="mb-3">Selecione uma opção:</p><div className="flex flex-wrap gap-2">{opcoesSistema.map((opcao) => <Button key={opcao} variant="outline" size="sm" className="border-[#cdd4e2] bg-white text-[#34405b]" onClick={() => setMessage(opcao)}>{opcao}</Button>)}</div></div></div>}
                 {registro === 'enviando' && <div className="flex gap-3"><div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-[#e9edff] text-[#314692]"><Bot className="size-4" /></div><div className="flex items-center gap-2 rounded-2xl rounded-tl-sm bg-[#f3f5f8] px-4 py-3 text-sm text-[#3e4a62]"><LoaderCircle className="size-4 animate-spin" /> Registrando sua solicitação…</div></div>}
                 {registro === 'erro' && <div className="flex gap-3"><div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-[#fdecec] text-[#b42318]"><TriangleAlert className="size-4" /></div><div className="max-w-[75%] rounded-2xl rounded-tl-sm bg-[#fef3f2] px-4 py-3 text-sm leading-6 text-[#912018]"><p className="font-semibold">Não foi possível registrar a solicitação.</p><p>Nada foi enviado e os dados preenchidos continuam aqui.</p><Button variant="outline" size="sm" className="mt-3 border-[#f2c6c2] bg-white text-[#912018]" onClick={() => void handleRegistrar()}>Tentar novamente</Button></div></div>}
-                {registro === 'sucesso' && protocolo && <div className="flex gap-3"><div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-[#e9f6f0] text-[#2c876a]"><Check className="size-4" /></div><div className="rounded-2xl rounded-tl-sm bg-[#edf8f3] px-4 py-3 text-sm leading-6 text-[#256b55]"><p className="font-semibold">Solicitação registrada com sucesso!</p><p>Protocolo <strong className="font-mono">{protocolo.codigo}</strong> · Retorno previsto {protocolo.estimativaRetorno}.</p><Button variant="outline" size="sm" className="mt-3 border-[#b6dfcd] bg-white text-[#256b55]" onClick={() => { setRegistro('ocioso'); setProtocolo(null) }}>Abrir nova solicitação</Button></div></div>}
+                {registro === 'sucesso' && solicitacao && <div className="flex gap-3"><div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-[#e9f6f0] text-[#2c876a]"><Check className="size-4" /></div><div className="rounded-2xl rounded-tl-sm bg-[#edf8f3] px-4 py-3 text-sm leading-6 text-[#256b55]"><p className="font-semibold">Solicitação registrada com sucesso!</p><p>Protocolo <strong className="font-mono">{solicitacao.protocolo}</strong> · Retorno previsto {solicitacao.estimativaRetorno}.</p><Button variant="outline" size="sm" className="mt-3 border-[#b6dfcd] bg-white text-[#256b55]" onClick={() => { setRegistro('ocioso'); setSolicitacao(null) }}>Abrir nova solicitação</Button></div></div>}
               </div>
-              <div className="border-t border-[#edf0f4] bg-[#fbfcfd] p-4 sm:px-7"><div className="relative"><Textarea value={message} onChange={(e) => setMessage(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void handleEnviar() } }} placeholder="Digite sua resposta..." className="min-h-10 resize-none border-[#dfe4ec] bg-white pl-12 pr-24 text-sm shadow-none focus-visible:ring-[#5268d4]" /><div className="absolute bottom-1 left-1 flex gap-1"><Button variant="ghost" size="icon" aria-label="Anexar arquivo" className="size-8 text-[#8490a4]"><Paperclip className="size-4" /></Button></div><Button size="icon" aria-label="Enviar resposta" className="absolute bottom-1 right-1 size-8 rounded-lg bg-[#253a83] text-white hover:bg-[#1f3070]" onClick={() => void handleEnviar()} disabled={enviandoMensagem} aria-busy={enviandoMensagem}>{enviandoMensagem ? <LoaderCircle className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}</Button></div>{erroEnvio && <p role="alert" className="mt-2 text-[11px] font-medium text-[#b42318]">Não foi possível enviar. Sua mensagem foi mantida — tente novamente.</p>}
+              <div className="border-t border-[#edf0f4] bg-[#fbfcfd] p-4 sm:px-7"><div className="relative"><Textarea value={message} onChange={(e) => setMessage(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void handleEnviar() } }} placeholder="Digite sua resposta..." className="min-h-10 resize-none border-[#dfe4ec] bg-white pl-12 pr-24 text-sm shadow-none focus-visible:ring-[#5268d4]" /><div className="absolute bottom-1 left-1 flex gap-1"><Button variant="ghost" size="icon" aria-label="Anexar arquivo" className="size-8 text-[#8490a4]"><Paperclip className="size-4" /></Button></div><Button size="icon" aria-label="Enviar resposta" className="absolute bottom-1 right-1 size-8 rounded-lg bg-[#253a83] text-white hover:bg-[#1f3070]" onClick={() => void handleEnviar()} disabled={enviandoMensagem || conversaId === null || conversaEncerrada} aria-busy={enviandoMensagem}>{enviandoMensagem ? <LoaderCircle className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}</Button></div>{conversaEncerrada && <p role="alert" className="mt-2 text-[11px] font-medium text-[#b42318]">Esta conversa foi encerrada e não aceita novas mensagens.</p>}
+              {erroEnvio && <p role="alert" className="mt-2 text-[11px] font-medium text-[#b42318]">Não foi possível enviar. Sua mensagem foi mantida — tente novamente.</p>}
               <p className="mt-2 text-[11px] text-[#9aa3b2]">Pressione Enter para enviar · Seus dados são tratados de forma segura</p></div>
             </CardContent>
           </Card>
