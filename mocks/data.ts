@@ -10,7 +10,7 @@ import type { Conversa, Mensagem, ResumoSolicitacao, SolicitacaoRegistrada, Usua
 
 export const conversaMock: Conversa = {
   id: 1,
-  cliente: 'Mariana Souza',
+  cliente: { id: 1, nome: 'Mariana Souza' },
   canal: 'WEB',
   status: 'ATIVA',
   iniciadaEm: '2026-10-23T14:02:11',

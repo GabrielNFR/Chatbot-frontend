@@ -13,9 +13,15 @@ export type StatusConversa =
   | 'EM_ATENDIMENTO_HUMANO'
   | 'ENCERRADA'
 
+export interface ClienteResumo {
+  id: number
+  nome: string
+}
+
 export interface Conversa {
   id: number
-  cliente: string
+  /** Objeto, não string: nome não é único no banco (só CPF e e-mail são unique). */
+  cliente: ClienteResumo
   /** Só `WEB` é conhecido hoje. */
   canal: string
   status: StatusConversa

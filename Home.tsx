@@ -147,7 +147,7 @@ export default function Home() {
                     aria-current={conversa.id === conversaId}
                     className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${conversa.id === conversaId ? 'bg-[#e9edff] font-semibold text-[#253a83]' : 'text-[#69758b] hover:bg-white'}`}
                   >
-                    <span className="truncate">{conversa.cliente}</span>
+                    <span className="truncate">{conversa.cliente.nome}</span>
                     <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${CLASSE_STATUS[conversa.status]}`}>{ROTULO_STATUS[conversa.status]}</span>
                   </button>
                 </li>
