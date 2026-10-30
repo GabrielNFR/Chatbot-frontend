@@ -20,9 +20,7 @@ export interface ClienteResumo {
 
 export interface Conversa {
   id: number
-  /** Objeto, não string: nome não é único no banco (só CPF e e-mail são unique). */
   cliente: ClienteResumo
-  /** Só `WEB` é conhecido hoje. */
   canal: string
   status: StatusConversa
   iniciadaEm: string
@@ -33,11 +31,9 @@ export interface Mensagem {
   id: number
   remetente: Remetente
   conteudo: string
-  /** LocalDateTime sem offset, como o backend envia. Não acrescente `Z`. */
   enviadaEm: string
 }
 
-/** Envelope de paginação do backend — campos em pt-BR. */
 export interface Pagina<T> {
   conteudo: T[]
   pagina: number
@@ -46,16 +42,50 @@ export interface Pagina<T> {
   totalPaginas: number
 }
 
-/** Reservado para a US 06: `POST /api/requests` ainda não existe. */
+export type TipoIdentificador = 'CPF' | 'EMAIL' | 'CODIGO'
+
+export interface OpcaoIdentificador {
+  tipo: TipoIdentificador
+  rotulo: string
+  placeholder: string
+  ajuda: string
+}
+
+export interface Assistente {
+  nome: string
+  papel: string
+}
+
+export interface Acolhimento {
+  assistente: Assistente
+  mensagens: string[]
+  canal: string
+  requerIdentificacao: boolean
+  identificadores: OpcaoIdentificador[]
+}
+
+export interface Identificacao {
+  tipo: TipoIdentificador
+  valor: string
+}
+
+export interface ClienteIdentificado {
+  id: number
+  nome: string
+  cpfMascarado: string
+  identificadorUsado: {
+    tipo: TipoIdentificador
+    valorMascarado: string
+  }
+}
+
 export interface SolicitacaoRegistrada {
   protocolo: string
   estimativaRetorno: string
 }
 
-/** Ainda sem endpoint — usado só pela UI. */
 export interface Usuario {
   nome: string
-  /** Regra do projeto: o CPF nunca é exibido completo. */
   cpfMascarado: string
 }
 

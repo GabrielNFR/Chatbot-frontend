@@ -1,12 +1,16 @@
 # Chatbot Frontend
 
-Frontend do assistente conversacional de atendimento. Esta é a tela da **US 06 — Abertura e
-Registro Assistido de Solicitações**: a usuária conversa com a assistente (Lia), que coleta os
-dados da solicitação e devolve um protocolo.
+Frontend do assistente conversacional de atendimento. A aplicação tem duas etapas:
+
+1. **US 01 — Acolhimento e Identificação da Usuária** (`Acolhimento.tsx`): saudação da assistente e
+   validação de CPF, e-mail ou código de acesso.
+2. **US 06 — Abertura e Registro Assistido de Solicitações** (`Home.tsx`): a usuária conversa com a
+   assistente (Lia), que coleta os dados da solicitação e devolve um protocolo.
 
 O backend (Spring Boot) vive em repositório separado e hoje expõe **uma única rota**:
-`GET /api/conversas`. Não existe `/api/messages`, nem `POST`, nem `sessionId` — o modelo é
-`Conversa -> Mensagem`. Detalhes em [Endpoints](#endpoints).
+`GET /api/conversas`. As rotas de identificação da US 01 ainda não existem — por isso a etapa de
+acolhimento roda com mocks e o app cai na tela da US 06 quando `VITE_USAR_MOCK=false`. Detalhes em
+[Endpoints](#endpoints).
 
 As personas, as user stories e as convenções de UI estão documentadas em
 [`contexto-front.md`](./contexto-front.md) — documento de referência. Onde ele divergir do código
@@ -60,17 +64,21 @@ Abre em <http://localhost:3000>.
 .
 ├── index.html            # entry point do Vite
 ├── main.tsx              # bootstrap do React
+├── App.tsx               # compõe US 01 -> US 06 (sem router)
+├── Acolhimento.tsx       # tela da US 01 (saudação + identificação)
 ├── Home.tsx              # tela da US 06 (chat + resumo da solicitação)
 ├── globals.css           # Tailwind + tokens de tema do shadcn/ui
 ├── vite.config.ts        # alias "@" -> raiz; dev na 3000; proxy /api -> :8080
 ├── services/             # única camada que conhece a API
 │   ├── http.ts           # baseURL, fetch e erro (nenhum fetch fora daqui)
+│   ├── identificacao.ts  # obterAcolhimento, identificarUsuaria
 │   ├── conversas.ts      # listarConversas, criarConversa
 │   ├── mensagens.ts      # listarMensagens, enviarMensagem
 │   ├── solicitacoes.ts   # criarSolicitacao (reservado, ainda mock)
-│   └── app.ts            # usuário/resumo/opções (ainda sem endpoint)
+│   └── app.ts            # usuário/resumo/opções e flag de mock
 ├── mocks/data.ts         # dados mockados, com os mesmos tipos da API
-├── lib/types.ts          # Conversa, Mensagem, Pagina<T>, ...
+├── lib/types.ts          # Conversa, Mensagem, Acolhimento, Pagina<T>, ...
+├── lib/identificacao.ts  # validação e máscara de CPF, e-mail e código
 ├── lib/utils.ts          # helper `cn` (clsx + tailwind-merge)
 ├── components/ui/        # componentes shadcn/ui
 └── public/               # ícones e placeholders
@@ -92,12 +100,13 @@ importam apenas de `@/services/*`, nunca dos mocks. Regra prática: **se aparece
 
 ### Endpoints
 
-**Hoje o backend tem uma única rota:** `GET /api/conversas` (paginada).
+**Hoje o backend tem uma única rota:** `GET /api/conversas` (paginada). O modelo é
+`Conversa -> Mensagem`; não existe `/api/messages`, nem `sessionId`.
 
 ```json
 {
   "conteudo": [
-    { "id": 1, "cliente": "Mariana Souza", "canal": "WEB", "status": "ATIVA",
+    { "id": 1, "cliente": { "id": 1, "nome": "Mariana Souza" }, "canal": "WEB", "status": "ATIVA",
       "iniciadaEm": "2026-10-23T14:02:11", "ultimaInteracaoEm": "2026-10-23T14:09:40" }
   ],
   "pagina": 0, "tamanho": 20, "totalElementos": 1, "totalPaginas": 1
@@ -112,12 +121,39 @@ importam apenas de `@/services/*`, nunca dos mocks. Regra prática: **se aparece
 | `GET /api/conversas/{id}/mensagens` | — | `Mensagem[]` crescente | ⏳ a implementar |
 | `POST /api/conversas/{id}/mensagens` | `{ "conteudo": "..." }` | `201` + `Mensagem` | ⏳ a implementar |
 | `POST /api/conversas` | `{ "clienteId": 1, "canal": "WEB" }` | `201` + `Conversa` | ⏳ a implementar |
+| `GET /api/acolhimento` | — | `Acolhimento` | ⏳ proposto (US 01) |
+| `POST /api/identificacao` | `{ "tipo": "CPF", "valor": "..." }` | `200` + `ClienteIdentificado` | ⏳ proposto (US 01) |
 
 O `POST` de mensagem **não recebe remetente**: o backend grava como `CLIENTE`, e quem grava
 `CHATBOT` é a lógica do assistente. Isso impede a tela de forjar o remetente.
 
 Para a US 06, `POST /api/requests` continua reservado — o tipo `SolicitacaoRegistrada` e o serviço
 `criarSolicitacao()` já existem, apontando para o mock.
+
+#### US 01 — acolhimento e identificação
+
+As duas rotas acima são uma **proposta de contrato**, não uma implementação existente. Enquanto o
+backend não as expõe:
+
+- `obterAcolhimento()` e `identificarUsuaria()` devolvem dados de `mocks/data.ts`;
+- com `VITE_USAR_MOCK=false`, ambos **lançam erro explícito** (não fingem sucesso);
+- `App.tsx` monta a tela da US 01 apenas com mocks ligados; no build de produção ele mantém a tela
+  da US 06, para o app não ficar inutilizável.
+
+O `Acolhimento` traz a saudação já renderizada pela persona (nome, papel e tom vêm do serviço, não
+do componente), a lista de identificadores aceitos e a flag `requerIdentificacao` — que permite
+pular a etapa quando o fluxo não exigir validação cadastral.
+
+Credenciais do mock (também visíveis em “Dados para demonstração”, na própria tela):
+
+| Identificador | Valor |
+|---|---|
+| CPF | `123.456.789-09` |
+| E-mail | `mariana.souza@exemplo.com` |
+| Código de acesso | `MARIANA2026` |
+
+Qualquer outro valor com formato válido simula **cadastro não encontrado**. Formatos inválidos são
+barrados no cliente, com mensagem amigável e sem limpar o que já foi digitado.
 
 #### Valores de enum
 
@@ -201,6 +237,23 @@ outro host; nesse caso a origem exata (`esquema://host:porta`) precisa estar lib
 
 ## O que já está implementado
 
+### US 01 — Acolhimento e Identificação
+
+- Tela de entrada com saudação vinda da persona (`services/identificacao.ts`), sem texto fixo no
+  componente
+- Identificação por **CPF, e-mail ou código de acesso**, com seleção acessível (radios nativos)
+- Validação de formato no cliente (CPF com dígitos verificadores, e-mail e código) e revalidação no
+  serviço — erro amigável, campo preservado e foco de volta no input
+- Estados de **carregando** (`Skeleton`), **pronto**, **erro de carregamento** (com tentar
+  novamente), **validando** e **sucesso**
+- Após validar, a usuária é tratada pelo **primeiro nome** e o CPF aparece apenas mascarado
+  (`***.***.***-**`); o valor cru sai do estado da tela
+- Ação “Não sou eu” para trocar a identificação e continuar no mesmo canal
+- Fluxo sem identificação suportado por `requerIdentificacao=false`
+- Auditoria axe (WCAG 2 A/AA) sem violações na tela
+
+### US 06 — Abertura de Solicitação
+
 - Tela da US 06 com a assistente, sugestões de resposta e card de resumo da solicitação
 - **Quatro estados**: carregando (`Skeleton`), vazio, erro (com “Tentar novamente”, preservando o
   texto digitado) e sucesso (protocolo + estimativa de retorno)
@@ -211,13 +264,15 @@ outro host; nesse caso a origem exata (`esquema://host:porta`) precisa estar lib
 
 ## O que ainda não existe
 
+- Rotas reais de acolhimento/identificação da US 01 (`GET /api/acolhimento` e
+  `POST /api/identificacao`) — hoje só mock
+- Criação/recuperação da conversa após a identificação (o `POST /api/conversas` ainda não existe)
 - Slot filling guiado da US 06 (as perguntas obrigatórias, uma por vez) e o passo de revisão com
   validação explícita da usuária
 - Stepper de 4 etapas; `Sheet` de resumo no mobile; `RadioGroup` e `Toast`
-- Máscara de CPF na interface — o requisito é nunca exibir o CPF completo
 - Header `X-Trace-Id` por conversa (observabilidade)
-- Integração real com a API (hoje tudo é mock)
+- Integração real da US 06 com a API (hoje tudo é mock)
 - Testes automatizados
-- Aplicação dos tokens de tema do `contexto-front.md` (primária `#2563EB`): o `Home.tsx` ainda usa
-  cores em hex, como `#253a83`
+- Aplicação dos tokens de tema do `contexto-front.md` (primária `#2563EB`): `Home.tsx` e
+  `Acolhimento.tsx` ainda usam cores em hex, como `#253a83`
 - O bloco `.dark` em `globals.css` é inerte — o app é light-only por decisão; pode ser removido

@@ -1,12 +1,56 @@
-import type { Conversa, Mensagem, ResumoSolicitacao, SolicitacaoRegistrada, Usuario } from '@/lib/types'
+import type { Acolhimento, Conversa, Mensagem, ResumoSolicitacao, SolicitacaoRegistrada, Usuario } from '@/lib/types'
+
+export const acolhimentoMock: Acolhimento = {
+  assistente: { nome: 'Lia', papel: 'Assistente digital' },
+  mensagens: [
+    'Olá! Eu sou a Lia, assistente digital do Portal de Serviços. Que bom ter você por aqui.',
+    'Para começar e garantir um atendimento personalizado, preciso confirmar quem você é. Informe seu CPF, e-mail ou código de acesso.',
+  ],
+  canal: 'WEB',
+  requerIdentificacao: true,
+  identificadores: [
+    {
+      tipo: 'CPF',
+      rotulo: 'CPF',
+      placeholder: '000.000.000-00',
+      ajuda: 'Digite os 11 dígitos. Seu CPF não é exibido por completo.',
+    },
+    {
+      tipo: 'EMAIL',
+      rotulo: 'E-mail',
+      placeholder: 'nome@empresa.com',
+      ajuda: 'Use o e-mail cadastrado no Portal de Serviços.',
+    },
+    {
+      tipo: 'CODIGO',
+      rotulo: 'Código de acesso',
+      placeholder: 'Ex.: ACESSO-2026',
+      ajuda: 'Informe o código enviado pela organização.',
+    },
+  ],
+}
 
 /**
- * ⚠️ DADOS MOCKADOS — nada aqui vem da API.
- *
- * Único lugar do projeto que inventa dados de negócio. Os tipos são os mesmos
- * usados contra a API real, então trocar mock por backend não toca nas telas.
- * Desligue com `VITE_USAR_MOCK=false`.
+ * Cadastro usado apenas no modo mock. O CPF é válido de propósito para que o
+ * caminho feliz possa ser testado sem decorar números aleatórios.
  */
+export interface ClienteMock {
+  id: number
+  nome: string
+  cpf: string
+  email: string
+  codigo: string
+}
+
+export const clientesMock: ClienteMock[] = [
+  {
+    id: 1,
+    nome: 'Mariana Souza',
+    cpf: '12345678909',
+    email: 'mariana.souza@exemplo.com',
+    codigo: 'MARIANA2026',
+  },
+]
 
 export const conversaMock: Conversa = {
   id: 1,
