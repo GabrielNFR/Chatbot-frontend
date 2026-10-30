@@ -34,6 +34,10 @@ export default function Home({ cliente }: { cliente?: ClienteIdentificado | null
   const [conversas, setConversas] = useState<Conversa[]>([])
   const [conversaId, setConversaId] = useState<number | null>(null)
   const [mensagens, setMensagens] = useState<Mensagem[]>([])
+  const [paginaMensagens, setPaginaMensagens] = useState(0)
+  const [totalPaginasMensagens, setTotalPaginasMensagens] = useState(0)
+  const [carregandoAnteriores, setCarregandoAnteriores] = useState(false)
+  const [erroAnteriores, setErroAnteriores] = useState(false)
   const [estado, setEstado] = useState<EstadoConversa>('carregando')
   const [message, setMessage] = useState('')
   const [enviandoMensagem, setEnviandoMensagem] = useState(false)
@@ -51,10 +55,16 @@ export default function Home({ cliente }: { cliente?: ClienteIdentificado | null
       if (!conversa) {
         setConversaId(null)
         setMensagens([])
+        setPaginaMensagens(0)
+        setTotalPaginasMensagens(0)
       } else {
         setConversaId(conversa.id)
-        setMensagens(await listarMensagens(conversa.id))
+        const mensagensDaConversa = await listarMensagens(conversa.id)
+        setMensagens(mensagensDaConversa.conteudo)
+        setPaginaMensagens(mensagensDaConversa.pagina)
+        setTotalPaginasMensagens(mensagensDaConversa.totalPaginas)
       }
+      setErroAnteriores(false)
       setEstado('pronto')
     } catch {
       setEstado('erro')
@@ -70,11 +80,34 @@ export default function Home({ cliente }: { cliente?: ClienteIdentificado | null
     setEstado('carregando')
     setErroEnvio(false)
     setConversaEncerrada(false)
+    setErroAnteriores(false)
     try {
-      setMensagens(await listarMensagens(id))
+      const mensagensDaConversa = await listarMensagens(id)
+      setMensagens(mensagensDaConversa.conteudo)
+      setPaginaMensagens(mensagensDaConversa.pagina)
+      setTotalPaginasMensagens(mensagensDaConversa.totalPaginas)
       setEstado('pronto')
     } catch {
       setEstado('erro')
+    }
+  }
+
+  async function carregarAnteriores() {
+    if (conversaId === null || carregandoAnteriores || paginaMensagens + 1 >= totalPaginasMensagens) return
+    setCarregandoAnteriores(true)
+    setErroAnteriores(false)
+    try {
+      const pagina = await listarMensagens(conversaId, paginaMensagens + 1)
+      setMensagens((atual) => {
+        const ids = new Set(atual.map((mensagem) => mensagem.id))
+        return [...pagina.conteudo.filter((mensagem) => !ids.has(mensagem.id)), ...atual]
+      })
+      setPaginaMensagens(pagina.pagina)
+      setTotalPaginasMensagens(pagina.totalPaginas)
+    } catch {
+      setErroAnteriores(true)
+    } finally {
+      setCarregandoAnteriores(false)
     }
   }
 
@@ -86,6 +119,7 @@ export default function Home({ cliente }: { cliente?: ClienteIdentificado | null
     try {
       const nova = await enviarMensagem(conversaId, texto)
       setMensagens((atual) => [...atual, nova])
+      setTotalPaginasMensagens((total) => Math.max(total, Math.ceil((mensagens.length + 1) / 50)))
       setMessage('')
     } catch (erro) {
       if (erro instanceof ErroHttp && erro.status === 409) {
@@ -175,6 +209,7 @@ export default function Home({ cliente }: { cliente?: ClienteIdentificado | null
             <CardHeader className="border-b border-[#edf0f4] px-5 py-4 sm:px-7"><div className="flex items-center gap-3"><div className="flex size-9 items-center justify-center rounded-full bg-[#253a83] text-white"><Bot className="size-5" /></div><div><p className="text-sm font-semibold">Lia <span className="ml-1.5 rounded bg-[#edf7f3] px-1.5 py-0.5 text-[10px] font-medium text-[#256b55]">Assistente</span></p><p className="text-xs text-[#5f6b80]">{primeiroNome ? `Olá, ${primeiroNome}! ` : ''}Vou guiar você durante todo o processo</p></div></div></CardHeader>
             <CardContent className="p-0">
               <div className="flex min-h-[420px] flex-col gap-5 px-5 py-6 sm:px-7" aria-live="polite">
+                {estado === 'pronto' && paginaMensagens + 1 < totalPaginasMensagens && <div className="flex flex-col items-center gap-2"><Button variant="outline" size="sm" className="border-[#cdd4e2] bg-white text-[#34405b]" onClick={() => void carregarAnteriores()} disabled={carregandoAnteriores}>{carregandoAnteriores ? <><LoaderCircle className="size-4 animate-spin" /> Carregando…</> : 'Carregar mensagens anteriores'}</Button>{erroAnteriores && <p role="alert" className="text-[11px] font-medium text-[#b42318]">Não foi possível carregar as mensagens anteriores.</p>}</div>}
                 {estado === 'carregando' && <div className="flex flex-col gap-4"><Skeleton className="h-16 w-3/4 rounded-2xl" /><Skeleton className="ml-auto h-12 w-1/2 rounded-2xl" /><Skeleton className="h-16 w-2/3 rounded-2xl" /></div>}
                 {estado === 'erro' && <div className="flex gap-3"><div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-[#fdecec] text-[#b42318]"><TriangleAlert className="size-4" /></div><div className="max-w-[75%] rounded-2xl rounded-tl-sm bg-[#fef3f2] px-4 py-3 text-sm leading-6 text-[#912018]"><p className="font-semibold">Não foi possível carregar a conversa.</p><p>Verifique sua conexão e tente novamente.</p><Button variant="outline" size="sm" className="mt-3 border-[#f2c6c2] bg-white text-[#912018]" onClick={() => void carregar()}>Tentar novamente</Button></div></div>}
                 {estado === 'pronto' && mensagens.length === 0 && <p className="text-center text-sm text-[#5f6b80]">{conversaId === null ? 'Nenhuma conversa encontrada.' : 'Nenhuma mensagem ainda. Envie a primeira para começar.'}</p>}

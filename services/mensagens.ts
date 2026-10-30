@@ -1,21 +1,27 @@
-import type { Mensagem } from '@/lib/types'
+import type { Mensagem, Pagina } from '@/lib/types'
 import { agoraLocal, atraso, mensagensMock } from '@/mocks/data'
 import { http, USAR_MOCK } from '@/services/http'
 
-/** `GET /api/conversas/{id}/mensagens` — a implementar no backend. */
-export async function listarMensagens(conversaId: number): Promise<Mensagem[]> {
+export async function listarMensagens(
+  conversaId: number,
+  pagina = 0,
+  tamanho = 50,
+): Promise<Pagina<Mensagem>> {
   if (USAR_MOCK) {
     await atraso(600)
-    return mensagensMock
+    return {
+      conteudo: pagina === 0 ? mensagensMock : [],
+      pagina,
+      tamanho,
+      totalElementos: mensagensMock.length,
+      totalPaginas: 1,
+    }
   }
-  return http.get<Mensagem[]>(`/api/conversas/${conversaId}/mensagens`)
+  return http.get<Pagina<Mensagem>>(
+    `/api/conversas/${conversaId}/mensagens?page=${pagina}&size=${tamanho}`,
+  )
 }
 
-/**
- * `POST /api/conversas/{id}/mensagens` — a implementar no backend.
- * O corpo leva apenas `conteudo`: quem grava o remetente é o servidor
- * (`CLIENTE` aqui, `CHATBOT` na lógica do assistente).
- */
 export async function enviarMensagem(conversaId: number, conteudo: string): Promise<Mensagem> {
   if (USAR_MOCK) {
     await atraso(300)
