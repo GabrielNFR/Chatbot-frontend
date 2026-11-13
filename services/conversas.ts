@@ -1,5 +1,5 @@
 import type { Conversa, Pagina } from '@/lib/types'
-import { atraso, conversaMock } from '@/mocks/data'
+import { agoraLocal, atraso, conversaMock, registrarTransferenciaMock } from '@/mocks/data'
 import { http, USAR_MOCK } from '@/services/http'
 
 /** `GET /api/conversas` — a única rota que já existe no backend. */
@@ -20,4 +20,34 @@ export async function criarConversa(dados: { clienteId: number; canal: string })
     return conversaMock
   }
   return http.post<Conversa>('/api/conversas', dados)
+}
+
+/** POST /api/conversas/{id}/transferencia */
+export async function transferirConversa(
+  conversaId: number,
+  motivo: string,
+): Promise<Conversa> {
+  const motivoTratado = motivo.trim()
+
+  if (!motivoTratado || motivoTratado.length > 500) {
+    throw new Error('Informe um motivo de até 500 caracteres.')
+  }
+
+   if (USAR_MOCK) {
+    await atraso(400)
+
+    registrarTransferenciaMock()
+
+    return {
+      ...conversaMock,
+      id: conversaId,
+      status: 'AGUARDANDO_ATENDIMENTO_HUMANO',
+      ultimaInteracaoEm: agoraLocal(),
+    }
+  }
+
+  return http.post<Conversa>(
+    `/api/conversas/${conversaId}/transferencia`,
+    { motivo: motivoTratado },
+  )
 }

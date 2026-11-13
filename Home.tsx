@@ -7,7 +7,7 @@ import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { opcoesSistema, resumo, usuario } from '@/services/app'
-import { listarConversas } from '@/services/conversas'
+import { listarConversas, transferirConversa } from '@/services/conversas'
 import { ErroHttp } from '@/services/http'
 import { enviarMensagem, listarMensagens } from '@/services/mensagens'
 import { criarSolicitacao } from '@/services/solicitacoes'
@@ -45,6 +45,17 @@ export default function Home({ cliente }: { cliente?: ClienteIdentificado | null
   const [conversaEncerrada, setConversaEncerrada] = useState(false)
   const [registro, setRegistro] = useState<EstadoRegistro>('ocioso')
   const [solicitacao, setSolicitacao] = useState<SolicitacaoRegistrada | null>(null)
+  const [mostrarTransferencia, setMostrarTransferencia] = useState(false)
+  const [motivoTransferencia, setMotivoTransferencia] = useState('')
+  const [estadoTransferencia, setEstadoTransferencia] =
+  useState<'ocioso' | 'enviando' | 'sucesso' | 'erro'>('ocioso')
+
+  const conversaAtual = conversas.find(
+    (conversa) => conversa.id === conversaId
+  )
+
+  const envioBloqueado =
+    conversaEncerrada || conversaAtual?.status === 'ENCERRADA'
 
   const carregar = useCallback(async () => {
     setEstado('carregando')
@@ -81,6 +92,9 @@ export default function Home({ cliente }: { cliente?: ClienteIdentificado | null
     setErroEnvio(false)
     setConversaEncerrada(false)
     setErroAnteriores(false)
+    setMostrarTransferencia(false)
+    setMotivoTransferencia('')
+    setEstadoTransferencia('ocioso')
     try {
       const mensagensDaConversa = await listarMensagens(id)
       setMensagens(mensagensDaConversa.conteudo)
@@ -110,10 +124,18 @@ export default function Home({ cliente }: { cliente?: ClienteIdentificado | null
       setCarregandoAnteriores(false)
     }
   }
-
   async function handleEnviar() {
     const texto = message.trim()
-    if (!texto || enviandoMensagem || conversaId === null) return
+
+    if (
+      !texto ||
+      enviandoMensagem ||
+      conversaId === null ||
+      conversaEncerrada ||
+      conversaAtual?.status === 'ENCERRADA'
+    ) {
+      return
+    }
     setEnviandoMensagem(true)
     setErroEnvio(false)
     try {
@@ -122,14 +144,38 @@ export default function Home({ cliente }: { cliente?: ClienteIdentificado | null
       setTotalPaginasMensagens((total) => Math.max(total, Math.ceil((mensagens.length + 1) / 50)))
       setMessage('')
     } catch (erro) {
-      if (erro instanceof ErroHttp && erro.status === 409) {
-        setConversaEncerrada(true)
-      } else {
+    if (erro instanceof ErroHttp && erro.status === 409) {
+      try {
+        const pagina = await listarConversas()
+
+        const conversaAtualizada = pagina.conteudo.find(
+          (conversa) => conversa.id === conversaId
+        )
+
+        if (conversaAtualizada) {
+          setConversas((atual) =>
+            atual.map((conversa) =>
+              conversa.id === conversaAtualizada.id
+                ? conversaAtualizada
+                : conversa
+            )
+          )
+        }
+
+        if (conversaAtualizada?.status === 'ENCERRADA') {
+          setConversaEncerrada(true)
+        } else {
+          setErroEnvio(true)
+        }
+      } catch {
         setErroEnvio(true)
       }
-    } finally {
-      setEnviandoMensagem(false)
+    } else {
+      setErroEnvio(true)
     }
+  } finally {
+    setEnviandoMensagem(false)
+  }
   }
 
   async function handleRegistrar() {
@@ -141,6 +187,58 @@ export default function Home({ cliente }: { cliente?: ClienteIdentificado | null
       setRegistro('erro')
     }
   }
+
+  async function handleTransferir() {
+    if (
+      conversaId === null ||
+      conversaAtual?.status !== 'ATIVA' ||
+      estadoTransferencia === 'enviando'
+    ) {
+      return
+    }
+
+    const motivo = motivoTransferencia.trim()
+
+    if (!motivo || motivo.length > 500) {
+      setEstadoTransferencia('erro')
+      return
+    }
+
+    setEstadoTransferencia('enviando')
+
+    try {
+      const conversaAtualizada = await transferirConversa(
+        conversaId,
+        motivo
+      )
+
+      setConversas((atual) =>
+        atual.map((conversa) =>
+          conversa.id === conversaAtualizada.id
+            ? conversaAtualizada
+            : conversa
+        )
+      )
+
+      setEstadoTransferencia('sucesso')
+      setMostrarTransferencia(false)
+      setMotivoTransferencia('')
+
+      try {
+        const pagina = await listarMensagens(conversaId)
+
+        setMensagens(pagina.conteudo)
+        setPaginaMensagens(pagina.pagina)
+        setTotalPaginasMensagens(pagina.totalPaginas)
+        setErroAnteriores(false)
+      } catch {
+        setErroAnteriores(true)
+      }
+    } catch {
+      setEstadoTransferencia('erro')
+    }
+  }
+
 
   const anonimo = cliente === null
   const nome = cliente?.nome ?? (anonimo ? 'Visitante' : usuario.nome)
@@ -182,6 +280,7 @@ export default function Home({ cliente }: { cliente?: ClienteIdentificado | null
                 <li key={conversa.id}>
                   <button
                     onClick={() => void selecionarConversa(conversa.id)}
+                   disabled={estadoTransferencia === 'enviando'}
                     aria-current={conversa.id === conversaId}
                     className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${conversa.id === conversaId ? 'bg-[#e9edff] font-semibold text-[#253a83]' : 'text-[#5b6578] hover:bg-white'}`}
                   >
@@ -214,12 +313,14 @@ export default function Home({ cliente }: { cliente?: ClienteIdentificado | null
                 {estado === 'erro' && <div className="flex gap-3"><div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-[#fdecec] text-[#b42318]"><TriangleAlert className="size-4" /></div><div className="max-w-[75%] rounded-2xl rounded-tl-sm bg-[#fef3f2] px-4 py-3 text-sm leading-6 text-[#912018]"><p className="font-semibold">Não foi possível carregar a conversa.</p><p>Verifique sua conexão e tente novamente.</p><Button variant="outline" size="sm" className="mt-3 border-[#f2c6c2] bg-white text-[#912018]" onClick={() => void carregar()}>Tentar novamente</Button></div></div>}
                 {estado === 'pronto' && mensagens.length === 0 && <p className="text-center text-sm text-[#5f6b80]">{conversaId === null ? 'Nenhuma conversa encontrada.' : 'Nenhuma mensagem ainda. Envie a primeira para começar.'}</p>}
                 {transcript.map((item, index) => <div key={index} className={`flex gap-3 ${item.role === 'user' ? 'flex-row-reverse' : ''}`}><div className={`mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full ${item.role === 'user' ? 'bg-[#f0f2f6] text-[#5b6578]' : 'bg-[#e9edff] text-[#314692]'}`}>{item.role === 'user' ? <UserRound className="size-3.5" /> : <Bot className="size-4" />}</div><div className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-6 ${item.role === 'user' ? 'rounded-tr-sm bg-[#253a83] text-white' : 'rounded-tl-sm bg-[#f3f5f8] text-[#3e4a62]'}`}>{item.text.split('\n').map((line, i) => <span key={i}>{line}{i < item.text.split('\n').length - 1 && <br />}</span>)}</div></div>)}
-                {estado === 'pronto' && <div className="flex gap-3"><div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-[#e9edff] text-[#314692]"><Bot className="size-4" /></div><div className="max-w-[75%] rounded-2xl rounded-tl-sm bg-[#f3f5f8] px-4 py-3 text-sm text-[#3e4a62]"><p className="mb-3">Selecione uma opção:</p><div className="flex flex-wrap gap-2">{opcoesSistema.map((opcao) => <Button key={opcao} variant="outline" size="sm" className="border-[#cdd4e2] bg-white text-[#34405b]" onClick={() => setMessage(opcao)}>{opcao}</Button>)}</div></div></div>}
+                {estado === 'pronto' && conversaAtual?.status === 'ATIVA' && <div className="flex gap-3"><div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-[#e9edff] text-[#314692]"><Bot className="size-4" /></div><div className="max-w-[75%] rounded-2xl rounded-tl-sm bg-[#f3f5f8] px-4 py-3 text-sm text-[#3e4a62]"><p className="mb-3">Selecione uma opção:</p><div className="flex flex-wrap gap-2">{opcoesSistema.map((opcao) => <Button key={opcao} variant="outline" size="sm" className="border-[#cdd4e2] bg-white text-[#34405b]" onClick={() => setMessage(opcao)}>{opcao}</Button>)}</div></div></div>}
+                {estado === 'pronto' && conversaAtual?.status === 'ATIVA' && <div className="rounded-xl border border-[#dbe0e8] bg-white p-4">{!mostrarTransferencia ? <Button variant="outline" onClick={() => { setMostrarTransferencia(true); setEstadoTransferencia('ocioso') }}>Solicitar atendimento humano</Button> : <div className="flex flex-col gap-3"><p className="text-sm font-semibold text-[#34405b]">Transferir para atendimento humano</p><Textarea value={motivoTransferencia} onChange={(e) => setMotivoTransferencia(e.target.value)} maxLength={500} placeholder="Descreva o motivo da transferência..." disabled={estadoTransferencia === 'enviando'} /><p className="text-xs text-[#5f6b80]">{motivoTransferencia.length}/500 caracteres</p>{estadoTransferencia === 'erro' && <p role="alert" className="text-sm text-[#b42318]">Não foi possível realizar a transferência. Verifique o motivo e tente novamente.</p>}<div className="flex flex-wrap gap-2"><Button onClick={() => void handleTransferir()} disabled={estadoTransferencia === 'enviando' || !motivoTransferencia.trim()}>{estadoTransferencia === 'enviando' ? 'Transferindo...' : 'Confirmar transferência'}</Button><Button variant="outline" disabled={estadoTransferencia === 'enviando'} onClick={() => { setMostrarTransferencia(false); setEstadoTransferencia('ocioso') }}>Cancelar</Button></div></div>}</div>}
+                {estado === 'pronto' && estadoTransferencia === 'sucesso' && <div role="status" className="rounded-xl border border-[#b6dfcd] bg-[#edf8f3] p-4 text-sm text-[#256b55]"><p className="font-semibold">Transferência solicitada com sucesso!</p><p className="mt-1">Sua conversa foi encaminhada para a fila de atendimento humano. Aguarde o atendimento.</p></div>}
                 {registro === 'enviando' && <div className="flex gap-3"><div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-[#e9edff] text-[#314692]"><Bot className="size-4" /></div><div className="flex items-center gap-2 rounded-2xl rounded-tl-sm bg-[#f3f5f8] px-4 py-3 text-sm text-[#3e4a62]"><LoaderCircle className="size-4 animate-spin" /> Registrando sua solicitação…</div></div>}
                 {registro === 'erro' && <div className="flex gap-3"><div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-[#fdecec] text-[#b42318]"><TriangleAlert className="size-4" /></div><div className="max-w-[75%] rounded-2xl rounded-tl-sm bg-[#fef3f2] px-4 py-3 text-sm leading-6 text-[#912018]"><p className="font-semibold">Não foi possível registrar a solicitação.</p><p>Nada foi enviado e os dados preenchidos continuam aqui.</p><Button variant="outline" size="sm" className="mt-3 border-[#f2c6c2] bg-white text-[#912018]" onClick={() => void handleRegistrar()}>Tentar novamente</Button></div></div>}
                 {registro === 'sucesso' && solicitacao && <div className="flex gap-3"><div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-[#e9f6f0] text-[#256b55]"><Check className="size-4" /></div><div className="rounded-2xl rounded-tl-sm bg-[#edf8f3] px-4 py-3 text-sm leading-6 text-[#256b55]"><p className="font-semibold">Solicitação registrada com sucesso!</p><p>Protocolo <strong className="font-mono">{solicitacao.protocolo}</strong> · Retorno previsto {solicitacao.estimativaRetorno}.</p><Button variant="outline" size="sm" className="mt-3 border-[#b6dfcd] bg-white text-[#256b55]" onClick={() => { setRegistro('ocioso'); setSolicitacao(null) }}>Abrir nova solicitação</Button></div></div>}
               </div>
-              <div className="border-t border-[#edf0f4] bg-[#fbfcfd] p-4 sm:px-7"><div className="relative"><Textarea value={message} onChange={(e) => setMessage(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void handleEnviar() } }} placeholder="Digite sua resposta..." className="min-h-10 resize-none border-[#dfe4ec] bg-white pl-12 pr-24 text-sm shadow-none focus-visible:ring-[#5268d4]" /><div className="absolute bottom-1 left-1 flex gap-1"><Button variant="ghost" size="icon" aria-label="Anexar arquivo" className="size-8 text-[#8490a4]"><Paperclip className="size-4" /></Button></div><Button size="icon" aria-label="Enviar resposta" className="absolute bottom-1 right-1 size-8 rounded-lg bg-[#253a83] text-white hover:bg-[#1f3070]" onClick={() => void handleEnviar()} disabled={enviandoMensagem || conversaId === null || conversaEncerrada} aria-busy={enviandoMensagem}>{enviandoMensagem ? <LoaderCircle className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}</Button></div>{conversaEncerrada && <p role="alert" className="mt-2 text-[11px] font-medium text-[#b42318]">Esta conversa foi encerrada e não aceita novas mensagens.</p>}
+              <div className="border-t border-[#edf0f4] bg-[#fbfcfd] p-4 sm:px-7"><div className="relative"><Textarea value={message} onChange={(e) => setMessage(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void handleEnviar() } }} placeholder="Digite sua resposta..." disabled={envioBloqueado}  className="min-h-10 resize-none border-[#dfe4ec] bg-white pl-12 pr-24 text-sm shadow-none focus-visible:ring-[#5268d4]" /><div className="absolute bottom-1 left-1 flex gap-1"><Button variant="ghost" size="icon" aria-label="Anexar arquivo" className="size-8 text-[#8490a4]"><Paperclip className="size-4" /></Button></div><Button size="icon" aria-label="Enviar resposta" className="absolute bottom-1 right-1 size-8 rounded-lg bg-[#253a83] text-white hover:bg-[#1f3070]" onClick={() => void handleEnviar()} disabled={enviandoMensagem || conversaId === null || envioBloqueado} aria-busy={enviandoMensagem}>{enviandoMensagem ? <LoaderCircle className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}</Button></div>{envioBloqueado && <p role="alert" className="mt-2 text-[11px] font-medium text-[#b42318]">Esta conversa foi encerrada e não aceita novas mensagens.</p>}
               {erroEnvio && <p role="alert" className="mt-2 text-[11px] font-medium text-[#b42318]">Não foi possível enviar. Sua mensagem foi mantida — tente novamente.</p>}
               <p className="mt-2 text-[11px] text-[#5f6b80]">Pressione Enter para enviar · Seus dados são tratados de forma segura</p></div>
             </CardContent>

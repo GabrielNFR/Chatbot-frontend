@@ -113,3 +113,21 @@ export function agoraLocal(): string {
   const p = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
 }
+
+export function registrarTransferenciaMock(): void {
+  const jaRegistrada = mensagensMock.some(
+    (mensagem) =>
+      mensagem.remetente === 'SISTEMA' &&
+      mensagem.conteudo.includes('fila de atendimento humano')
+  )
+
+  if (jaRegistrada) return
+
+  mensagensMock.push({
+    id: Math.max(0, ...mensagensMock.map((mensagem) => mensagem.id)) + 1,
+    remetente: 'SISTEMA',
+    conteudo:
+      'Sua conversa está na fila de atendimento humano. Nosso horário é de segunda a sexta, das 8h às 18h.',
+    enviadaEm: agoraLocal(),
+  })
+}
