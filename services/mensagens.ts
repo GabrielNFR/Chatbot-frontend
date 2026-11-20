@@ -29,3 +29,15 @@ export async function enviarMensagem(conversaId: number, conteudo: string): Prom
   }
   return http.post<Mensagem>(`/api/conversas/${conversaId}/mensagens`, { conteudo })
 }
+
+/** POST /api/conversas/{id}/mensagens/atendente */
+export async function enviarMensagemAtendente(
+  conversaId: number,
+  atendenteId: number,
+  conteudo: string,
+): Promise<Mensagem> {
+  return http.post<Mensagem>(
+    `/api/conversas/${conversaId}/mensagens/atendente`,
+    { atendenteId, conteudo },
+  )
+}

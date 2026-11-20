@@ -51,3 +51,19 @@ export async function transferirConversa(
     { motivo: motivoTratado },
   )
 }
+
+/** GET /api/conversas/fila */
+export async function listarFila(): Promise<Conversa[]> {
+  return http.get<Conversa[]>('/api/conversas/fila')
+}
+
+/** POST /api/conversas/{id}/assumir */
+export async function assumirConversa(
+  conversaId: number,
+  atendenteId: number,
+): Promise<Conversa> {
+  return http.post<Conversa>(
+    `/api/conversas/${conversaId}/assumir`,
+    { atendenteId },
+  )
+}

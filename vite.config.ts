@@ -9,7 +9,10 @@ export default defineConfig({
     strictPort: false,
     // Mesma origem em dev: /api -> Spring Boot, sem CORS.
     proxy: {
-      '/api': 'http://localhost:8080',
+      '/api':{
+      target: 'http://localhost:8080',
+      changeOrigin: true,
+      },
     },
   },
   resolve: {
